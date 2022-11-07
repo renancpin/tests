@@ -47,7 +47,10 @@ export function parseDigitableLine(barCodeOrDigitableLine: string) {
         fatorVencimento +
         valor;
 
-    return digitableLine;
+    return digitableLine.replace(
+        /^(\d{5})(\d{5})(\d{5})(\d{6})(\d{5})(\d{6})(\d)(\d{14})$/,
+        '$1.$2 $3.$4 $5.$6 $7 $8',
+    );
 }
 
 export function digitoVerificador(campo: string) {

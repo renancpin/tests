@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import { URLSearchParams } from 'url';
+import { parseBarCode, parseDigitableLine } from '../calculos/calculos.service';
 
 interface ConsultaFatorDataVencimentoResponse {
     codigoRetorno: number;
@@ -25,7 +26,8 @@ interface ConsultaResponse {
 }
 
 export interface BilletData {
-    barcode: string;
+    barcode?: string;
+    digitable_line?: string;
     name: string;
     cpf_cnpj: string;
     amount: string;
@@ -61,20 +63,21 @@ class APIBradesco {
             baseURL: apiHost,
         });
 
-        this.apiClientId = apiClientId;
-        this.apiHost = apiHost;
-        this.privateKey = privateKey;
         this.axiosInstance = axiosInstance;
+        this.apiHost = apiHost;
+        this.apiClientId = apiClientId;
+        this.privateKey = privateKey;
         this.access_token = '';
         this.token_expiration = new Date();
     }
 
     private async getAccessToken() {
         if (!this.access_token || this.token_expiration < new Date()) {
-            const { access_token, expiration } = await this.authenticate();
+            const authData = await this.authenticate();
 
-            this.access_token = access_token ?? '';
-            this.token_expiration = expiration ?? this.token_expiration;
+            this.access_token = authData?.access_token ?? '';
+            this.token_expiration =
+                authData?.expiration ?? this.token_expiration;
         }
 
         return this.access_token;
@@ -98,17 +101,13 @@ class APIBradesco {
                 access_token: string;
             }>(route, urlEncodedPayload, { headers });
 
-            console.log('[Billet API] Successfully logged in');
-
             const access_token = response.data?.access_token;
             const expiration = new Date();
             expiration.setHours(expiration.getHours() + 1);
 
             return { access_token, expiration };
-        } catch (error) {
-            console.error(error);
-
-            return {};
+        } catch {
+            return null;
         }
     }
 
@@ -137,7 +136,8 @@ class APIBradesco {
     }
 
     async consultBillet(barCodeOrDigitableLine: string) {
-        const barCode = this.parseBarCode(barCodeOrDigitableLine);
+        const barCode = parseBarCode(barCodeOrDigitableLine);
+        const digitableLine = parseDigitableLine(barCodeOrDigitableLine);
         const route = '/oapi/v1/pagamentos/boleto/validarDadosTitulo';
         const method = 'POST';
         const payload = {
@@ -167,47 +167,44 @@ class APIBradesco {
                 dataVencimento,
                 nomeCedente,
                 cnpjBeneficiario,
+                cpfCnpjPagador,
             } = response.data?.consultaFatorDataVencimentoResponse;
+
+            const beneficiario = (
+                cpfCnpjPagador || cnpjBeneficiario
+            ).toString();
 
             const billetData: BilletData = {
                 barcode: barCode,
+                digitable_line: digitableLine,
                 amount: valorTitulo.toFixed(2),
                 due_date: dataVencimento
                     .toString()
                     .replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3'),
                 name: nomeCedente,
-                cpf_cnpj: cnpjBeneficiario.toString(),
+                cpf_cnpj: beneficiario.padStart(
+                    beneficiario.length <= 11 ? 11 : 14,
+                    '0',
+                ),
             };
 
             return billetData;
         } catch (error) {
             if (error instanceof AxiosError) {
-                console.error({ ...error.response?.data, barCode });
+                console.error(error.response?.data ?? error.message);
+
+                if (+(error.status ?? 500) >= 500) {
+                    throw {
+                        status: error.status,
+                        message: error.response?.data ?? error.message,
+                    };
+                }
             } else {
-                console.error(
-                    new Error(
-                        `[Billet API] Could not consult billet ${barCode}`,
-                    ),
-                );
+                console.error(error);
             }
+
+            return null;
         }
-    }
-
-    private parseBarCode(barCodeOrDigitableLine: string) {
-        const candidate = barCodeOrDigitableLine.replace(/[^0-9]/g, '');
-
-        if (candidate.length == 44) {
-            return candidate;
-        }
-
-        const barCode =
-            candidate.substring(0, 4) +
-            candidate.substring(32, 48) +
-            candidate.substring(4, 9) +
-            candidate.substring(10, 20) +
-            candidate.substring(21, 31);
-
-        return barCode;
     }
 
     async signRequest(params: {
@@ -217,17 +214,22 @@ class APIBradesco {
         query?: string[];
         payload?: Record<string, unknown>;
     }) {
-        const { method, url, payload, token } = params;
+        const { method, url, payload, token, query } = params;
         const access_token = token ?? (await this.getAccessToken());
         const now = new Date();
         const nonce = `${now.getTime()}`;
         const timestamp = `${now.toISOString()}`;
+        const query_string = query
+            ? `?${Object.entries(query)
+                  .map((pair) => pair.join('='))
+                  .join('&')}`
+            : '';
 
         const request =
             (method ? method.toUpperCase() : 'POST') +
-            `\n${url ?? '/'}` + //url
-            '\n' + //query params
-            `\n${payload ? JSON.stringify(payload) : ''}` + //body
+            `\n${url ?? '/'}` +
+            `\n${query_string}` +
+            `\n${payload ? JSON.stringify(payload) : ''}` +
             `\n${access_token}` +
             `\n${nonce}` +
             `\n${timestamp}` +

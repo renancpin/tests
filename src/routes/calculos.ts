@@ -1,14 +1,18 @@
 import express, { Request, Response } from 'express';
-import { parseDigitableLine } from '../modules/calculos/calculos.service';
+import {
+    parseBarCode,
+    parseDigitableLine,
+} from '../modules/calculos/calculos.service';
 
 const router = express.Router();
 
-router.post('/calcula-linha-digitavel', (req: Request, res: Response) => {
-    const codBarras = req.body.codBarras;
+router.get('/cod-barras/:input', (req: Request, res: Response) => {
+    const input = req.params.input;
 
-    const linhaDigitavel = parseDigitableLine(codBarras);
+    const codBarras = parseBarCode(input);
+    const linhaDigitavel = parseDigitableLine(input);
 
-    res.send({ linhaDigitavel });
+    res.send({ codBarras, linhaDigitavel });
 });
 
 export default router;

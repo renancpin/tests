@@ -4,7 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 
 import router from './src/routes/router';
-import jsonerrorhandler from './src/middlewares/error-handler.middleware';
+import errorhandler from './src/middlewares/error-handler.middleware';
 
 const app: Express = express();
 const corsOrigin = process.env.CORS_ORIGIN ?? '*';
@@ -15,7 +15,8 @@ app.use(express.json());
 app.use(morgan('dev'));
 
 app.use('/', router);
-app.use(jsonerrorhandler);
+
+app.use(errorhandler());
 
 app.get('/', (req: Request, res: Response) => {
     console.log(

@@ -1,22 +1,29 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import BilletAPI from '../modules/bank-api/bank-api.service';
 
 const router = express.Router();
 
-router.post('/consult-billet', (req: Request, res: Response) => {
-    const { barCode } = req.body;
+router.get(
+    '/consult-billet/:barCode',
+    (req: Request, res: Response, next: NextFunction) => {
+        const { barCode } = req.params;
 
-    BilletAPI.consultBillet(barCode).then((response) => {
-        if (!response) {
-            res.status(400).send({
-                status: 400,
-                error: 'Invalid bar code or digitable line',
+        BilletAPI.consultBillet(barCode)
+            .then((response) => {
+                if (!response) {
+                    res.status(400).send({
+                        status: 400,
+                        error: 'Invalid bar code or digitable line',
+                    });
+                } else {
+                    res.send(response);
+                }
+            })
+            .catch((error) => {
+                next(error);
             });
-        } else {
-            res.send(response);
-        }
-    });
-});
+    },
+);
 
 router.post('/sign-request', async (req: Request, res: Response) => {
     const request = req.body;
