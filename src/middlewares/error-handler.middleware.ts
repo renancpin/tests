@@ -7,17 +7,19 @@ export function jsonErrorHandler(
     next: NextFunction,
 ) {
     try {
-        const { message, status } = err as {
+        const { message, status, statusCode, data } = err as {
             message?: string;
             status?: number;
             statusCode?: number;
+            data?: Record<string, unknown>;
         };
 
-        res.status(status ?? 500).send({
+        res.status(status ?? statusCode ?? 500).send({
             status,
             message:
-                message?.replace(/[\n\r]/g, '').replace(/\s{2,}/g, ' ') ??
+                message?.replace?.(/[\n\r]/g, '').replace(/\s{2,}/g, ' ') ??
                 'Encontramos um problema',
+            data,
         });
     } catch (error) {
         next(error);
