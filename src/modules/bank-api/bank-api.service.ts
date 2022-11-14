@@ -34,6 +34,24 @@ export interface BilletData {
     due_date: string;
 }
 
+interface Parameters {
+    token: string;
+    url: string;
+    method: string;
+    query: string[] | null;
+    payload: Record<string, unknown>;
+}
+
+type OptionalParameters = Partial<Parameters>;
+
+const defaults: Parameters = {
+    token: '',
+    url: '/',
+    method: 'POST',
+    query: null,
+    payload: {},
+};
+
 class APIBradesco {
     private axiosInstance: AxiosInstance;
     private apiHost: string;
@@ -193,7 +211,7 @@ class APIBradesco {
             if (error instanceof AxiosError) {
                 console.error(error.response?.data ?? error.message);
 
-                if (+(error.status ?? 500) >= 500) {
+                if (+(error.response?.status ?? 500) >= 500) {
                     throw {
                         status: error.status,
                         message: error.response?.data ?? error.message,
@@ -207,15 +225,12 @@ class APIBradesco {
         }
     }
 
-    async signRequest(params: {
-        token?: string;
-        url?: string;
-        method?: string;
-        query?: string[];
-        payload?: Record<string, unknown>;
-    }) {
-        const { method, url, payload, token, query } = params;
-        const access_token = token ?? (await this.getAccessToken());
+    async signRequest(params: OptionalParameters) {
+        const { method, url, payload, token, query } = await this.makeDefaults(
+            params,
+        );
+
+        const access_token = token;
         const now = new Date();
         const nonce = `${now.getTime()}`;
         const timestamp = `${now.toISOString()}`;
@@ -224,12 +239,13 @@ class APIBradesco {
                   .map((pair) => pair.join('='))
                   .join('&')}`
             : '';
+        const payload_string = payload ? JSON.stringify(payload) : '';
 
         const request =
-            (method ? method.toUpperCase() : 'POST') +
-            `\n${url ?? '/'}` +
+            method.toUpperCase() +
+            `\n${url}` +
             `\n${query_string}` +
-            `\n${payload ? JSON.stringify(payload) : ''}` +
+            `\n${payload_string}` +
             `\n${access_token}` +
             `\n${nonce}` +
             `\n${timestamp}` +
@@ -255,6 +271,52 @@ class APIBradesco {
             access_token,
             headers,
         };
+    }
+
+    async makeRequest(params: OptionalParameters) {
+        const defaults = await this.makeDefaults(params);
+        const { method, url, payload } = defaults;
+
+        const signedRequest = await this.signRequest({ ...defaults });
+        const { headers } = signedRequest;
+
+        try {
+            const response = await this.axiosInstance.request({
+                method,
+                url,
+                data: JSON.stringify(payload),
+                headers,
+            });
+
+            return response;
+        } catch (error) {
+            if (error instanceof AxiosError) {
+                const status = +(error.status ?? error.response?.status ?? 500);
+
+                throw {
+                    status,
+                    message: error.message ?? error.response?.statusText,
+                    data: error.response?.data,
+                };
+            } else {
+                throw error;
+            }
+        }
+    }
+
+    async makeDefaults(
+        params: OptionalParameters,
+        customDefaults?: OptionalParameters,
+    ): Promise<Parameters> {
+        return Object.assign(
+            {},
+            defaults,
+            {
+                token: await this.getAccessToken(),
+            },
+            customDefaults,
+            params,
+        );
     }
 }
 

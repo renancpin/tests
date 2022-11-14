@@ -25,6 +25,12 @@ router.get(
     },
 );
 
+router.get('/generate-jwt', (req: Request, res: Response) => {
+    const jwt = BilletAPI.generateJwt();
+
+    res.send({ jwt });
+});
+
 router.post('/sign-request', async (req: Request, res: Response) => {
     const request = req.body;
     const payload = await BilletAPI.signRequest(request);
@@ -32,10 +38,24 @@ router.post('/sign-request', async (req: Request, res: Response) => {
     res.send(payload);
 });
 
-router.get('/generate-jwt', (req: Request, res: Response) => {
-    const jwt = BilletAPI.generateJwt();
+router.post(
+    '/make-request',
+    async (req: Request, res: Response, next: NextFunction) => {
+        const request = req.body;
+        const response = BilletAPI.makeRequest(request);
 
-    res.send({ jwt });
-});
+        await response
+            .then((response) => {
+                Object.keys(response.headers).forEach((key) => {
+                    res.setHeader(key, response.headers[key]);
+                });
+
+                res.status(response.status).send(response.data);
+            })
+            .catch((error) => {
+                next(error);
+            });
+    },
+);
 
 export default router;
